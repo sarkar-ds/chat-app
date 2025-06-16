@@ -1,109 +1,67 @@
-import { useRef, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
-import { Image, Send, X } from "lucide-react";
-import toast from "react-hot-toast";
+import { useAuthStore } from "../store/useAuthStore";
+import { useState, useRef } from "react";
 
 const MessageInput = () => {
-  const [text, setText] = useState("");
-  const [imagePreview, setImagePreview] = useState(null);
-  const fileInputRef = useRef(null);
-  const { sendMessage } = useChatStore();
+  const { selectedUser, sendMessage } = useChatStore();
+  const { authUser, socket } = useAuthStore();
+  const [message, setMessage] = useState("");
+  const typingTimeoutRef = useRef(null);
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
-      return;
-    }
+  const handleChange = (e) => {
+    const newMessage = e.target.value;
+    setMessage(newMessage);
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
+    // Emit "typing" to receiver
+    socket.emit("typing", {
+      roomId: selectedUser._id,
+      sender: authUser.username,
+    });
 
-  const removeImage = () => {
-    setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
+    // Clear and reset "stop typing" timer
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!text.trim() && !imagePreview) return;
-
-    try {
-      await sendMessage({
-        text: text.trim(),
-        image: imagePreview,
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stop typing", {
+        roomId: selectedUser._id,
+        sender: authUser.username,
       });
+    }, 2000); // 2 seconds after last keystroke
+  };
 
-      // Clear form
-      setText("");
-      setImagePreview(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (error) {
-      console.error("Failed to send message:", error);
-    }
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    // Send the message through Zustand
+    sendMessage({ text: trimmed });
+    setMessage("");
+
+    // Emit "stop typing" after sending
+    socket.emit("stop typing", {
+      roomId: selectedUser._id,
+      sender: authUser.username,
+    });
   };
 
   return (
-    <div className="p-4 w-full">
-      {imagePreview && (
-        <div className="mb-3 flex items-center gap-2">
-          <div className="relative">
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
-            />
-            <button
-              onClick={removeImage}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-base-300
-              flex items-center justify-center"
-              type="button"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-        <div className="flex-1 flex gap-2">
-          <input
-            type="text"
-            className="w-full input input-bordered rounded-lg input-sm sm:input-md"
-            placeholder="Type a message..."
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={handleImageChange}
-          />
-
-          <button
-            type="button"
-            className={`hidden sm:flex btn btn-circle
-                     ${imagePreview ? "text-emerald-500" : "text-zinc-400"}`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Image size={20} />
-          </button>
-        </div>
-        <button
-          type="submit"
-          className="btn btn-sm btn-circle"
-          disabled={!text.trim() && !imagePreview}
-        >
-          <Send size={22} />
-        </button>
-      </form>
-    </div>
+    <form onSubmit={handleSubmit} className="p-4 border-t flex">
+      <input
+        type="text"
+        value={message}
+        onChange={handleChange}
+        placeholder="Type your message..."
+        className="flex-1 p-2 rounded border outline-none"
+      />
+      <button
+        type="submit"
+        className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+      >
+        Send
+      </button>
+    </form>
   );
 };
+
 export default MessageInput;

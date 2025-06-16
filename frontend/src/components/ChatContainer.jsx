@@ -15,8 +15,9 @@ const ChatContainer = () => {
     selectedUser,
     subscribeToMessages,
     unsubscribeFromMessages,
+    typingUser,
   } = useChatStore();
-  const { authUser } = useAuthStore();
+  const { authUser, socket } = useAuthStore();
   const messageEndRef = useRef(null);
 
   useEffect(() => {
@@ -24,8 +25,23 @@ const ChatContainer = () => {
 
     subscribeToMessages();
 
-    return () => unsubscribeFromMessages();
-  }, [selectedUser._id, getMessages, subscribeToMessages, unsubscribeFromMessages]);
+    // Subscribe to typing events
+    socket.on("typing", ({ sender }) => {
+      if (sender !== authUser.username) {
+        useChatStore.getState().setTypingUser(sender);
+      }
+    });
+
+    socket.on("stop typing", () => {
+      useChatStore.getState().clearTypingUser();
+    });
+
+    return () => {
+      unsubscribeFromMessages();
+      socket.off("typing");
+      socket.off("stop typing");
+    };
+  }, [selectedUser._id, getMessages, subscribeToMessages, unsubscribeFromMessages, socket, authUser.username]);
 
   useEffect(() => {
     if (messageEndRef.current && messages) {
@@ -83,6 +99,12 @@ const ChatContainer = () => {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className={`transition-all duration-300 ease-in-out ${typingUser ? 'opacity-100 h-8' : 'opacity-0 h-0 overflow-hidden'}`}>
+        <div className="px-4 py-2 text-sm text-gray-500 italic">
+          {typingUser} is typing...
+        </div>
       </div>
 
       <MessageInput />
